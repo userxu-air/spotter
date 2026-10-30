@@ -1,176 +1,21 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#000000">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="姿势教练">
-<meta name="mobile-web-app-capable" content="yes">
-<link rel="manifest" href="./manifest.json">
-<link rel="icon" href="./icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="./styles.css">
-<title>姿势教练 · Pose Coach</title>
-</head>
-<body>
-
-<div id="finder">
-  <video id="videoBg" playsinline muted autoplay></video>
-  <video id="video" playsinline muted autoplay></video>
-  <canvas id="overlay"></canvas>
-
-  <div class="grid" id="grid"><i></i><i></i><i></i><i></i></div>
-  <div class="focus" id="focus"><i></i><i></i><i></i><i></i></div>
-
-  <!-- 顶部状态条 -->
-  <div class="topbar">
-    <div class="rec" id="rec"><b></b><span>REC</span><span id="recTime">00:00</span></div>
-    <div class="topright">
-      <span id="resTag">—</span><span class="sep"></span><span id="fps">—</span>
-    </div>
-  </div>
-
-  <!-- 设置入口 -->
-  <button class="iconbtn" id="settingsBtn" aria-label="设置">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.12.3.37.55.67.66H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-  </button>
-
-  <!-- 计数 HUD -->
-  <div class="hud" id="hud">
-    <div class="counter">
-      <div class="k" id="hudLabel">REPS</div>
-      <div class="v"><span id="hudValue">0</span><small id="hudUnit">次</small></div>
-    </div>
-    <div class="setline" id="setLine"></div>
-    <div class="chips">
-      <div class="chip" id="chipAngle">角度 <b>—</b></div>
-      <div class="chip" id="chipPhase">待开始</div>
-    </div>
-  </div>
-
-  <!-- 提示条 -->
-  <div class="toast" id="toast"></div>
-
-  <!-- 空状态：画面里没人 -->
-  <div class="empty" id="empty">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.4"/><path d="M12 8v7"/><path d="M8 10.5 12 9l4 1.5"/><path d="M9.5 21 12 15l2.5 6"/></svg>
-    <p id="emptyText">走到画面里，全身和脚都要入镜</p>
-  </div>
-
-  <!-- 底部相机条 -->
-  <div class="cambar">
-    <div class="modes" id="modes"></div>
-    <div class="shutterRow">
-      <button class="ghost" id="soundBtn" aria-label="语音">
-        <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
-      </button>
-      <button class="shutter" id="shutter" aria-label="开始或结束"><i></i></button>
-      <button class="ghost" id="flipBtn" aria-label="翻转镜头">
-        <svg viewBox="0 0 24 24"><path d="M20 15a8 8 0 0 1-13.7 3.7L3 15"/><path d="M3 21v-6h6"/><path d="M4 9a8 8 0 0 1 13.7-3.7L21 9"/><path d="M21 3v6h-6"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- 组间休息 -->
-  <div class="veil" id="restSheet">
-    <div class="veilInner">
-      <div class="veilK">REST</div>
-      <div class="restNum" id="restNum">40</div>
-      <p class="veilP">第 <b id="restDone">1</b> 组完成 · 下一组 <b id="restNext">2/3</b></p>
-      <button class="pill primary" id="skipRest">跳过休息</button>
-    </div>
-  </div>
-
-  <!-- 训练总结 -->
-  <div class="veil" id="summarySheet">
-    <div class="veilInner wide">
-      <div class="veilK">SUMMARY</div>
-      <h3 id="sumTitle">本次训练</h3>
-      <div class="sumBig"><span id="sumValue">0</span><small id="sumUnit">次</small></div>
-      <div class="sumMeta" id="sumMeta"></div>
-      <div class="sumSets" id="sumSets"></div>
-      <div class="rowBtns">
-        <button class="pill ghost2" id="sumClose">返回取景</button>
-        <button class="pill primary" id="sumAgain">再来一组</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 设置抽屉 -->
-  <div class="drawer" id="settingsSheet">
-    <div class="drawerCard">
-      <div class="drawerHead">
-        <span>训练设置</span>
-        <button class="x" id="settingsClose" aria-label="关闭">✕</button>
-      </div>
-
-      <div class="field">
-        <label>模式</label>
-        <div class="seg" id="modeSeg">
-          <button data-mode="free" class="on">自由练</button>
-          <button data-mode="target">定目标</button>
-        </div>
-      </div>
-
-      <div class="field" id="targetFields">
-        <label>目标</label>
-        <div class="steppers">
-          <div class="stepper">
-            <span>组数</span>
-            <div><button data-step="sets:-1">−</button><b id="setsVal">3</b><button data-step="sets:1">+</button></div>
-          </div>
-          <div class="stepper">
-            <span id="perSetLabel">每组次数</span>
-            <div><button data-step="perSet:-1">−</button><b id="perSetVal">15</b><button data-step="perSet:1">+</button></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>取景方式</label>
-        <div class="seg" id="fitSeg">
-          <button data-fit="contain" class="on">完整视野</button>
-          <button data-fit="cover">铺满裁切</button>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>显示与反馈</label>
-        <div class="switches">
-          <button class="sw on" data-toggle="voice">语音提示<i></i></button>
-          <button class="sw on" data-toggle="skeleton">骨架叠加<i></i></button>
-          <button class="sw on" data-toggle="grid">构图网格<i></i></button>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>今日记录</label>
-        <div class="today" id="todayBox"></div>
-        <div class="history" id="historyList"></div>
-        <button class="linkbtn" id="clearToday">清空今日记录</button>
-      </div>
-
-      <div class="footNote" id="engineNote"></div>
-    </div>
-  </div>
-
-  <!-- 启动 / 加载 / 异常 -->
-  <div class="gate" id="gate">
-    <div class="gateIcon" id="gateIcon">
-      <svg viewBox="0 0 24 24"><path d="M23 7 16 12l7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
-    </div>
-    <h2 id="gateTitle">把手机架好，<em>退后 2 米</em></h2>
-    <p id="gateDesc">全身和脚入镜，镜头放正，光线充足。<br>点快门开启取景器，<b>画面只在本机处理</b>。</p>
-
-    <div class="progress" id="progressBox"><i id="bar"></i></div>
-    <button class="gbtn" id="startBtn" disabled aria-label="开启摄像头"></button>
-    <div class="gstat" id="loadStat">正在加载模型…</div>
-    <button class="pill ghost2 small hidden" id="retryBtn">重新加载</button>
-    <button class="linkbtn" id="gateSettings">先设置训练目标</button>
-  </div>
-</div>
-
-<script type="module" src="./src/main.js"></script>
-</body>
-</html>
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f5f6f2"><link rel="icon" href="./icon.svg"><link rel="manifest" href="./manifest.json"><link rel="stylesheet" href="./styles.css"><title>Spotter · 好好练一组</title></head>
+<body><main class="app">
+<header><a class="brand" href="./">spotter<span>你的日常运动搭子</span></a><button id="historyBtn" class="text-btn">今日记录</button></header>
+<section class="intro"><p class="eyebrow">MOVE A LITTLE. FEEL BETTER.</p><h1>给自己，一组的时间。</h1><p>选一个动作，放好手机。计数和节奏，交给 Spotter。</p></section>
+<div class="workspace">
+<section class="setup panel"><div class="section-head"><h2>今天练什么</h2><span>01 / 准备</span></div><div id="exercises" class="exercises"></div><p id="exerciseHint" class="hint"></p>
+<details><summary>训练选项 · 方向与目标</summary><div class="field"><label for="mode">训练方式</label><select id="mode"><option value="free">自由练习</option><option value="target">设定目标</option></select></div>
+<div id="targets" class="target-fields" hidden><label>组数<input id="sets" type="number" min="1" max="10" value="3"></label><label>每组次数 / 秒<input id="perSet" type="number" min="1" max="300" value="15"></label></div>
+<div class="field"><span>画面方向</span><div class="seg" id="orientation"><button data-layout="portrait" aria-pressed="true">竖屏</button><button data-layout="landscape" aria-pressed="false">横屏</button></div></div>
+<p class="micro">横屏模式会调整布局；如需横向拍摄，请同时转动手机。</p>
+<div class="field"><label for="voice">语音提示</label><input id="voice" type="checkbox"></div><div class="field"><label for="skeleton">显示动作骨架</label><input id="skeleton" type="checkbox" checked></div>
+</details><p class="privacy">画面只在本机分析，不录制、不上传。<br>仅在准备和训练时使用摄像头。</p></section>
+<section class="session panel"><div class="section-head"><h2 id="sessionTitle">先准备，再开始</h2><span id="cameraStatus">摄像头已关闭</span></div>
+<div id="finder" class="preview"><video id="video" playsinline muted></video><canvas id="overlay"></canvas><div id="focus" hidden></div><div id="placeholder"><svg viewBox="0 0 100 130" aria-hidden="true"><circle cx="50" cy="20" r="12"/><path d="M50 38v42M22 58l28-15 28 15M30 119l20-39 20 39"/></svg><strong>留一点空间，给身体</strong><span>手机架稳，按动作提示调整机位</span></div><div id="countdown" hidden></div></div>
+<div id="feedback" role="status" aria-live="polite">准备好后开启摄像头，先检查站位。</div><div class="metrics"><div><strong id="count">0</strong><span id="unit">次</span></div><div><strong id="clock">00:00</strong><span>有效训练时间</span></div><div><strong id="progress">自由练</strong><span id="phaseLabel">尚未开始</span></div></div>
+<div class="actions"><button id="primary" class="primary">准备训练</button><button id="finish" class="secondary" hidden>结束训练</button><button id="flip" class="text-btn" hidden>切换前后镜头</button></div><p class="micro">准备、暂停和休息不计入训练时间。运动中如有不适，请停止。</p></section></div>
+<footer>少一点负担，多一点坚持。<span>Spotter · 本地 AI 动作计数</span></footer>
+<dialog id="summary"><div class="section-head"><h2>这一组，完成了。</h2><button class="text-btn" id="summaryClose">关闭</button></div><p id="summaryText"></p><p class="micro">记录仅保存在此设备；未完成有效动作时不保存。</p><button id="again" class="primary">再练一次</button></dialog>
+<dialog id="history"><div class="section-head"><h2>今日记录</h2><button class="text-btn" id="historyClose">关闭</button></div><div id="historyList"></div></dialog>
+</main><script type="module" src="./src/main.js"></script></body></html>

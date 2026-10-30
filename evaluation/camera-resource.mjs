@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { PoseEngine } from '../src/pose-engine.js';
+let release, captured, stopped=0;
+const stream=()=>({getTracks:()=>[{stop(){stopped++;}}]});
+Object.defineProperty(globalThis,'navigator',{value:{mediaDevices:{getUserMedia:constraints=>{captured=constraints;return new Promise(resolve=>release=resolve);}}},configurable:true});
+const engine=new PoseEngine();engine.video={play:async()=>{},videoWidth:640,videoHeight:853};
+const opening=engine.openCamera();engine.destroy();release(stream());
+await assert.rejects(opening,{name:'AbortError'});assert.equal(stopped,1);assert.equal(engine.stream,null);
+navigator.mediaDevices.getUserMedia=async constraints=>{captured=constraints;return stream();};
+const other=new PoseEngine();other.video={play:async()=>{},videoWidth:853,videoHeight:640};other.orientation='landscape';
+await other.openCamera();assert.equal(captured.video.frameRate.max,15);assert.equal(captured.video.width.ideal,853);assert.equal(captured.video.height.ideal,640);other.destroy();assert.equal(stopped,2);
+console.log('PASS: late camera permission cancellation releases tracks; low-resolution landscape request capped at 15 fps; destroy stops tracks. Uses simulated browser media API.');

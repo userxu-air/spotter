@@ -1,15 +1,22 @@
 {
-  "name": "姿势教练 Pose Coach",
-  "short_name": "姿势教练",
-  "description": "手机摄像头 + 本地 AI 姿态识别，取景器内实时纠正动作、自动计数",
+  "name": "Spotter · 日常运动搭子",
+  "short_name": "Spotter",
+  "description": "手机浏览器里的本地 AI 动作计数，按需开启摄像头",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["fullscreen", "standalone"],
+  "display_override": [
+    "standalone"
+  ],
   "orientation": "any",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#f5f6f2",
+  "theme_color": "#f5f6f2",
   "icons": [
-    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }

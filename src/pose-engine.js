@@ -35,7 +35,8 @@ export class PoseEngine {
     this.delegate = null;
     this.facing = 'user';
     this.mirror = true;
-    this.quality = 'high';
+    this.quality = 'low';
+    this.cameraGeneration = 0;
   }
 
   get ready(){ return !!this.landmarker; }
@@ -76,9 +77,11 @@ export class PoseEngine {
 
   async openCamera(facing = this.facing, quality = this.quality){
     this.stopTracks();
+    const cameraGeneration = this.cameraGeneration;
+    let cameraStream;
     this.facing = facing;
     this.quality = quality;
-    const portrait = window.innerHeight > window.innerWidth;
+    const portrait = this.orientation !== 'landscape';
     // 传感器原生多为 4:3。请求 9:16 会被系统横向裁切（视野变窄，像开了 1.8x 变焦）。
     // 这里用 3:4 / 4:3，视野更接近原生，再交给显示层决定裁切方式。
     const size = quality === 'low'
@@ -87,17 +90,22 @@ export class PoseEngine {
       : (portrait ? { width: { ideal: 960 }, height: { ideal: 1280 } }
                   : { width: { ideal: 1280 }, height: { ideal: 960 } });
 
-    const base = { ...size, frameRate: { ideal: 30, max: 30 } };
+    const base = { ...size, frameRate: { ideal: 15, max: 15 } };
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
+      cameraStream = await navigator.mediaDevices.getUserMedia({
         video: { ...base, facingMode: { ideal: facing } }, audio: false
       });
     } catch (e) {
       // 权限类错误直接上抛，由 UI 给出引导；其余按无 facingMode 重试
       if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') throw e;
-      this.stream = await navigator.mediaDevices.getUserMedia({ video: base, audio: false });
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: base, audio: false });
     }
 
+    if(cameraGeneration !== this.cameraGeneration){
+      cameraStream.getTracks().forEach(t => t.stop());
+      throw new DOMException('Camera request cancelled', 'AbortError');
+    }
+    this.stream = cameraStream;
     this.video.srcObject = this.stream;
     await this.video.play().catch(() => {});
     this.mirror = (facing === 'user');
@@ -116,6 +124,7 @@ export class PoseEngine {
   }
 
   stopTracks(){
+    this.cameraGeneration++;
     if (this.stream) this.stream.getTracks().forEach(t => t.stop());
     this.stream = null;
   }

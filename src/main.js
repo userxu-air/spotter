@@ -1,655 +1,207 @@
-import { CONFIG } from './config.js';
-import { EXERCISES, EXERCISE_KEYS } from './exercises.js';
-import { LandmarkSmoother, fmtClock, angle } from './math.js';
-import { PoseEngine } from './pose-engine.js';
+import { EXERCISES } from './exercises.js';
 import { RepCounter } from './counter.js';
-import { Workout } from './workout.js';
+import { LandmarkSmoother, fmtClock } from './math.js';
+import { PoseEngine } from './pose-engine.js';
 import { Renderer } from './renderer.js';
+import { Workout } from './workout.js';
 import { voice } from './voice.js';
-import { saveSession, getSessions, getTodayStats, clearToday, prefs } from './store.js';
+import { saveSession, getSessions, prefs } from './store.js';
+import { usablePose } from './session.js';
 
 const $ = id => document.getElementById(id);
-const video = $('video'), finder = $('finder'), videoBg = $('videoBg');
-
-/* ============================================================
-   状态
-   ============================================================ */
-const state = {
-  phase: 'boot',            // boot | ready | live | training | resting | summary | error
-  ex: prefs.get('ex', 'squat'),
-  mode: prefs.get('mode', 'free'),
-  sets: prefs.get('sets', 3),
-  perSet: prefs.get('perSet', 15),
-  skeleton: prefs.get('skeleton', true),
-  grid: prefs.get('grid', true),
-  lastSummary: null
-};
-
-const engine = new PoseEngine();
-const counter = new RepCounter(state.ex);
-const workout = new Workout();
+const video = $('video');
+const renderer = new Renderer(video, $('overlay'), $('finder'), $('focus'));
+const counter = new RepCounter();
 const smoother = new LandmarkSmoother();
-const renderer = new Renderer(video, $('overlay'), finder, $('focus'));
-
-let lastVideoTime = -1;
-let noPoseSince = 0;
-let frameTimes = [];
-let lowFpsSince = 0;
-let lastSummarySavedAt = 0;
-
-/* 简单节流器（按 key 独立计时） */
-const _throttleMap = new Map();
-function throttle(key, ms, fn){
-  const now = performance.now();
-  if (now - (_throttleMap.get(key) || 0) < ms) return;
-  _throttleMap.set(key, now);
-  fn();
+const workout = new Workout();
+let preferredFacing='user';
+let engine = null, phase = 'idle', ex = 'squat', generation = 0, raf = 0;
+let lastFrame = 0, lastVideo = -1, stableSince = 0, lostSince = 0, resume = false;
+let holdValue=0;
+let restTimer = 0, orientation = prefs.get('orientation', 'portrait');
+const labels = {squat:'深蹲',pushup:'俯卧撑',curl:'弯举',raise:'侧平举',plank:'平板支撑'};
+$('exercises').innerHTML = Object.entries(labels).map(([k,v]) => `<button data-ex="${k}" aria-pressed="${k===ex}">${v}</button>`).join('');
+function feedback(text) { if ($('feedback').textContent !== text) $('feedback').textContent = text; }
+function layout() {
+  document.body.dataset.layout = orientation;
+  document.querySelectorAll('[data-layout]').forEach(b => b.setAttribute('aria-pressed', b.dataset.layout === orientation));
+  if (engine) engine.orientation = orientation;
+  renderer.resize();
 }
-
-/* ============================================================
-   基础 UI
-   ============================================================ */
-let toastTimer = 0;
-function toast(msg, kind){
-  const el = $('toast');
-  el.textContent = msg;
-  el.className = 'toast on' + (kind ? ' ' + kind : '');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = 'toast' + (kind ? ' ' + kind : ''); }, 2000);
+function choose(key) {
+  ex = key; counter.setExercise(key);
+  $('exerciseHint').textContent = EXERCISES[key].hint + (EXERCISES[key].needFoot ? '，确保身体完整入镜。' : '，上半身和手臂入镜即可。');
+  $('unit').textContent = EXERCISES[key].unit;
+  document.querySelectorAll('[data-ex]').forEach(b => b.setAttribute('aria-pressed', b.dataset.ex === ex));
 }
-
-function setChip(text, kind){
-  const el = $('chipPhase');
-  el.textContent = text;
-  el.className = 'chip' + (kind ? ' ' + kind : '');
+function controls() {
+  const cameraActive = ['loading','positioning','countdown','training'].includes(phase);
+  document.body.dataset.active = cameraActive;
+  $('primary').disabled = phase === 'loading' || phase === 'countdown';
+  $('primary').textContent = ({idle:'准备训练',loading:'正在准备…',positioning:'取消准备',countdown:'即将开始…',training:'暂停训练',paused:'继续训练',resting:'准备下一组'})[phase] || '准备训练';
+  $('finish').hidden = phase === 'idle';
+  $('finish').textContent = resume ? '结束训练' : '取消';
+  $('flip').hidden = !['positioning','training'].includes(phase);
+  $('cameraStatus').textContent = cameraActive && phase !== 'loading' ? '摄像头使用中 · 本地分析' : '摄像头已关闭';
+  $('phaseLabel').textContent = ({idle:'尚未开始',loading:'加载中',positioning:'调整站位',countdown:'准备开始',training:'训练中',paused:'已暂停',resting:'组间休息'})[phase];
+  $('sessionTitle').textContent = phase === 'idle' ? '先准备，再开始' : labels[ex] + ' · ' + $('phaseLabel').textContent;
+  for (const e of $('exercises').querySelectorAll('button')) e.disabled = phase !== 'idle';
+  for (const id of ['mode','sets','perSet']) $(id).disabled = phase !== 'idle';
+  if (phase === 'training') keepAwake(); else releaseWakeLock();
 }
-
-function guide(msg){
-  setChip('调整站位', 'bad');
-  throttle('guide', 4200, () => { toast(msg, 'err'); voice.say(msg, { gap: 5000 }); });
+function stopCamera() {
+  generation++; cancelAnimationFrame(raf); raf = 0; voice.stop();
+  engine?.destroy(); engine = null;
+  video.pause(); video.srcObject = null;
+  $('finder').classList.remove('active'); $('countdown').hidden = true;
+  renderer.clear(); renderer.hideFocus(); smoother.reset(); counter.reset();
+  stableSince = 0; lostSince = 0; holdValue=0;
+  releaseWakeLock();
 }
-function warn(msg){
-  throttle('warn', 2000, () => { toast(msg, 'err'); voice.say(msg, { gap: 2600 }); });
-}
-
-function showGate(show){ $('gate').classList.toggle('hide', !show); }
-function setGate({ title, desc, stat, error, showRetry } = {}){
-  if (title !== undefined) $('gateTitle').innerHTML = title;
-  if (desc !== undefined) $('gateDesc').innerHTML = desc;
-  if (stat !== undefined){
-    $('loadStat').textContent = stat;
-    $('loadStat').classList.toggle('err', !!error);
+async function prepare() {
+  if (document.hidden) return;
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) { feedback('摄像头需要 HTTPS，请使用 Safari 或 Chrome 打开。'); return; }
+  if (!resume) {
+    const sets=Number($('sets').value), perSet=Number($('perSet').value);
+    if ($('mode').value==='target' && (!Number.isInteger(sets)||sets<1||sets>10||!Number.isInteger(perSet)||perSet<1||perSet>300)) {feedback('请输入 1–10 组、每组 1–300 次或秒。');return;}
+    workout.reset(); workout.configure({ex,mode:$('mode').value,sets,perSet}); renderProgress();
   }
-  if (showRetry !== undefined) $('retryBtn').classList.toggle('hidden', !showRetry);
+  clearTimeout(restTimer); stopCamera();
+  const token = generation; phase='loading'; controls();
+  const localEngine = new PoseEngine(); engine=localEngine; localEngine.orientation=orientation;
+  voice.enabled=$('voice').checked; voice.unlock();
+  try {
+    await localEngine.init(video,(p,msg)=>{if(token===generation) feedback(`${msg} · ${Math.round(p*100)}%`);});
+    if(token!==generation){localEngine.destroy();return;}
+    await localEngine.openCamera(preferredFacing,'low');
+    if(token!==generation){localEngine.destroy();return;}
+    renderer.mirror=localEngine.mirror; video.style.transform=renderer.mirror?'scaleX(-1)':'';
+    renderer.resize(); lastFrame=0; lastVideo=-1; phase='positioning';
+    $('finder').classList.add('active'); feedback('请按左侧动作提示站位，稳定入镜后自动倒计时。'); controls();
+    raf=requestAnimationFrame(frame);
+  } catch(e) {
+    localEngine.destroy();
+    if(token!==generation)return;
+    stopCamera(); phase=resume?'paused':'idle'; controls();
+    feedback(e.name==='NotAllowedError'?'摄像头权限未允许，请在浏览器中允许后重试。':'准备失败，请检查网络、摄像头是否被占用，然后重试。');
+  }
 }
-
-/* ============================================================
-   动作与设置
-   ============================================================ */
-EXERCISE_KEYS.forEach(k => {
-  const b = document.createElement('button');
-  b.className = 'mode' + (k === state.ex ? ' on' : '');
-  b.textContent = EXERCISES[k].label;
-  b.dataset.key = k;
-  b.onclick = () => selectExercise(k);
-  $('modes').appendChild(b);
-});
-
-function selectExercise(key){
-  if (key === state.ex || !EXERCISES[key]) return;
-  if (state.phase === 'training' || state.phase === 'resting'){
-    toast('先结束当前训练再换动作');
+function pause(message='已暂停，摄像头已关闭。点击继续后重新检查站位。') {
+  if(phase==='training'){workout.tick(performance.now());if(holdValue>0)workout.addValue(holdValue,performance.now());}
+  stopCamera(); phase=resume?'paused':'idle'; controls(); feedback(message);
+}
+function finish() {
+  clearTimeout(restTimer);
+  const now=performance.now();
+  if(phase==='training' && holdValue>0)workout.addValue(holdValue,now);
+  if(phase!=='training') workout.lastTickAt=now;
+  const summary=resume?workout.finish(now):null;
+  stopCamera(); phase='idle';resume=false;controls();
+  if(summary){
+    const saved=summary.totalValue>0?saveSession(summary):true;
+    $('summaryText').textContent=`${labels[summary.ex]} · ${Math.round(summary.totalValue*10)/10} ${summary.unit} · 有效训练 ${fmtClock(summary.seconds)}`+(saved?'':'（本机记录保存失败）');
+    $('summary').showModal();
+  }
+  feedback('摄像头已关闭。准备好后可以再练一组。');
+}
+function renderProgress(hold=0) {
+  $('count').textContent=Math.round((workout.totalValue+hold)*10)/10;
+  $('clock').textContent=fmtClock(workout.trainingMs/1000);
+  $('progress').textContent=workout.isTarget?`${workout.setIndex}/${workout.targetSets} 组`:'自由练';
+}
+function progress(value,now) {
+  holdValue=0;
+  const result=workout.addValue(value,now);
+  if(result==='done'){finish();return;}
+  if(result==='rest'){
+    stopCamera();phase='resting';controls();
+    function updateRest(){
+      if(phase!=='resting')return;
+      const left=Math.ceil(workout.restLeft(performance.now()));
+      feedback(left>0?`本组完成，休息 ${left} 秒。摄像头已关闭。`:'休息完成，点击准备下一组。');
+      if(left>0)restTimer=setTimeout(updateRest,1000);
+    }
+    updateRest();
+  }
+}
+function frame(now) {
+  if(!engine || !['positioning','countdown','training'].includes(phase))return;
+  raf=requestAnimationFrame(frame);
+  if(now-lastFrame<1000/12 || video.readyState<2 || video.currentTime===lastVideo)return;
+  lastFrame=now; lastVideo=video.currentTime;
+  const result=engine.detect(now), n=result?.landmarks?.[0], w=result?.worldLandmarks?.[0];
+  const ready=usablePose(n,ex);
+  if(!ready){
+    renderer.clear();stableSince=0;$('countdown').hidden=true;
+    if(phase==='countdown'){phase='positioning';controls();}
+    if(!lostSince)lostSince=now;
+    if(phase==='training'){workout.lastTickAt=now;if(holdValue>0){progress(holdValue,now);holdValue=0;counter.reset();if(phase!=='training')return;}}
+    feedback(n?'请调整站位，让需要的关节清晰入镜。':'暂时看不清身体，请按动作提示站进画面。');
+    if(now-lostSince>20000)pause('长时间未清晰入镜，摄像头已关闭。调整手机后点击继续。');
     return;
   }
-  state.ex = key;
-  prefs.set('ex', key);
-  counter.setExercise(key);
-  smoother.reset();
-  [...$('modes').children].forEach(c => c.classList.toggle('on', c.dataset.key === key));
-  $('perSetLabel').textContent = EXERCISES[key].hold ? '每组秒数' : '每组次数';
-  $('hudLabel').textContent = EXERCISES[key].hold ? 'HOLD' : EXERCISES[key].key;
-  $('hudUnit').textContent = EXERCISES[key].unit;
-  renderIdleHud();
-  toast(EXERCISES[key].label + ' · ' + EXERCISES[key].hint);
-}
-
-function renderIdleHud(){
-  $('hudValue').textContent = '0';
-  $('hudUnit').textContent = EXERCISES[state.ex].unit;
-  $('setLine').textContent = state.mode === 'target'
-    ? `目标 ${state.sets} 组 × ${state.perSet}${EXERCISES[state.ex].unit}`
-    : '自由练 · 点快门开始';
-  $('chipAngle').innerHTML = '角度 <b>—</b>';
-  setChip('待开始');
-}
-
-function applyToggles(){
-  voice.enabled = !!state.voiceOn;
-  $('soundBtn').classList.toggle('off', !voice.enabled);
-  $('grid').classList.toggle('off', !state.grid);
-  document.querySelectorAll('.sw').forEach(b => {
-    const k = b.dataset.toggle;
-    const on = k === 'voice' ? voice.enabled : k === 'skeleton' ? state.skeleton : state.grid;
-    b.classList.toggle('on', on);
-  });
-}
-state.voiceOn = prefs.get('voice', false);   // 默认静音，在设置里开启
-state.fit = prefs.get('fit', 'contain');
-
-/** 取景方式：完整视野（有模糊背景填充，画面不裁切）/ 铺满裁切 */
-function applyFit(){
-  video.style.objectFit = state.fit === 'cover' ? 'cover' : 'contain';
-  renderer.fit = state.fit;
-  // 完整视野时用同一路视频做模糊背景，填掉上下留白
-  videoBg.classList.toggle('on', state.fit === 'contain' && !!engine.stream);
-  videoBg.classList.toggle('mirror', renderer.mirror);
-  const seg = $('fitSeg');
-  if (seg) seg.querySelectorAll('button').forEach(b =>
-    b.classList.toggle('on', b.dataset.fit === state.fit));
-}
-
-/** 背景层共享同一路视频流 */
-function syncBg(){
-  if (!engine.stream){ videoBg.srcObject = null; return; }
-  if (videoBg.srcObject !== engine.stream){
-    videoBg.srcObject = engine.stream;
-    videoBg.play().catch(() => {});
+  const pts=smoother.apply(n);
+  renderer.draw(pts,ex,counter.cur,counter.phase,{skeleton:$('skeleton').checked});
+  if(phase==='positioning'||phase==='countdown'){
+    const probe=counter.update(n,w,now);counter.reset();
+    if(probe.blocked){stableSince=0;phase='positioning';$('countdown').hidden=true;feedback(probe.events[0]?.msg||'请调整站位');if(!lostSince)lostSince=now;if(now-lostSince>20000)pause('站位未就绪，摄像头已关闭。调整手机后重新准备。');return;}
+    lostSince=0;
+    if(!stableSince)stableSince=now;
+    const elapsed=now-stableSince;
+    if(elapsed<1000){feedback('站位合适，请保持，马上开始。');return;}
+    phase='countdown';controls();$('countdown').hidden=false;
+    $('countdown').textContent=String(Math.max(1,Math.ceil((4000-elapsed)/1000)));
+    if(elapsed<4000)return;
+    $('countdown').hidden=true;
+    if(!resume){workout.start(now);resume=true;} else {workout.state='training';workout.lastTickAt=now;}
+    counter.reset();smoother.reset();phase='training';controls();voice.say('开始');
   }
-  videoBg.classList.toggle('mirror', renderer.mirror);
-  videoBg.classList.toggle('on', state.fit === 'contain');
-}
-
-/* ============================================================
-   启动流程
-   ============================================================ */
-function checkEnvironment(){
-  const ua = navigator.userAgent;
-  if (/MicroMessenger/i.test(ua)){
-    return '请点右上角「⋯」→「在浏览器打开」。<br>微信内置浏览器无法正常调用摄像头。';
+  const out=counter.update(n,w,now);
+  if(out.blocked){workout.lastTickAt=now;feedback(out.events[0]?.msg||'请调整站位');if(!lostSince)lostSince=now;if(now-lostSince>20000)pause('站位未就绪，摄像头已关闭。调整手机后继续。');return;}
+  lostSince=0;
+  workout.tick(now);
+  holdValue=out.holding?out.holdSeconds:0;
+  const notice=out.events.find(e=>e.type==='warn');
+  feedback(notice?.msg || (out.holding?'保持稳定，正常呼吸。':'按自己的节奏完成动作。'));
+  if(notice)voice.say(notice.msg,{gap:4000});
+  for(const event of out.events){
+    if(event.type==='rep'){voice.say(String(workout.totalValue+1),{gap:500});progress(1,now);}
+    if(event.type==='holdDone')progress(event.seconds,now);
+    if(phase!=='training')break;
   }
-  if (!window.isSecureContext && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
-    return '当前链接不是 HTTPS，浏览器会禁止摄像头。<br>请使用 https 链接打开。';
-  }
-  if (!navigator.mediaDevices?.getUserMedia){
-    return '当前浏览器不支持摄像头调用。<br>请用 Safari 或 Chrome 打开。';
-  }
-  return null;
+  renderProgress(phase==='training'?out.holdSeconds:0);
+  if(ex==='plank' && phase==='training' && workout.isTarget && out.holdSeconds>=workout.targetPerSet-workout.setValue) progress(out.holdSeconds,now);
 }
-
-async function boot(){
-  showGate(true);
-  const envErr = checkEnvironment();
-  if (envErr){
-    state.phase = 'error';
-    setGate({ title: '暂时无法使用', desc: envErr, stat: '换用系统浏览器后再试', error: true });
-    $('startBtn').disabled = true;
-    $('progressBox').classList.add('done');
-    return;
-  }
-
-  $('retryBtn').classList.add('hidden');
-  $('startBtn').disabled = true;
-  $('progressBox').classList.remove('done');
-
-  try {
-    await engine.init(video, (p, msg) => {
-      $('bar').style.width = Math.round(p * 100) + '%';
-      setGate({ stat: msg + ' · ' + Math.round(p * 100) + '%' });
-    });
-    state.phase = 'ready';
-    $('progressBox').classList.add('done');
-    setGate({ stat: '模型就绪 · 全程离线运行' });
-    $('startBtn').disabled = false;
-    $('engineNote').textContent =
-      `本地推理 · ${engine.delegate} · 画面与数据均不上传`;
-    applyToggles();
-    renderIdleHud();
-    loop();
-  } catch (e){
-    console.error(e);
-    state.phase = 'error';
-    setGate({
-      title: '模型加载失败',
-      desc: '可能是网络中断或存储受限。<br>连接 WiFi 后重试，或换个浏览器。',
-      stat: String(e?.message || e), error: true, showRetry: true
-    });
-    $('progressBox').classList.add('done');
-  }
-}
-
-$('retryBtn').onclick = () => location.reload();
-
-/* ============================================================
-   摄像头开启
-   ============================================================ */
-async function openFinder(){
-  if (!engine.ready) return;
-  $('startBtn').disabled = true;
-  setGate({ stat: '正在启动取景器…' });
-  try {
-    voice.unlock();
-    const size = await engine.openCamera('user');
-    renderer.mirror = engine.mirror;
-    renderer.resize();
-    syncBg();
-    applyFit();
-    $('resTag').textContent = (() => {
-      const short = Math.min(size.width, size.height);
-      return short >= 1080 ? '1080P' : short >= 720 ? '720P' : short + 'P';
-    })();
-    showGate(false);
-    $('hud').classList.add('show');
-    $('modes').classList.add('show');
-    startWorkout();
-  } catch (e){
-    state.phase = 'error';
-    showGate(true);
-    const msg = e?.name === 'NotAllowedError'
-      ? '摄像头权限被拒绝。<br>请在浏览器地址栏的权限设置里允许摄像头，然后重试。'
-      : e?.name === 'NotFoundError'
-        ? '没有找到可用摄像头。'
-        : '无法启动摄像头：' + (e?.message || e);
-    setGate({ title: '无法打开摄像头', desc: msg, stat: '允许权限后点下方按钮重试', error: true, showRetry: true });
-    $('startBtn').disabled = false;
-  }
-}
-
-$('startBtn').onclick = openFinder;
-
-/* ============================================================
-   训练流程
-   ============================================================ */
-function startWorkout(){
-  workout.configure({ mode: state.mode, ex: state.ex, sets: state.sets, perSet: state.perSet });
-  workout.start(performance.now());
-  counter.reset();
-  smoother.reset();
-  state.phase = 'training';
-  noPoseSince = 0;
-  $('rec').classList.add('on');
-  $('shutter').classList.add('on');
-  $('summarySheet').classList.remove('show');
-  $('restSheet').classList.remove('show');
-  $('hudLabel').textContent = EXERCISES[state.ex].hold ? 'HOLD' : EXERCISES[state.ex].key;
-  // 开始即刷新，避免沿用上一次训练的读数
-  $('hudValue').textContent = '0';
-  $('hudUnit').textContent = EXERCISES[state.ex].unit;
-  $('setLine').textContent = workout.isTarget
-    ? `第 1/${workout.targetSets} 组 · 本组 0/${workout.targetPerSet}`
-    : '自由练';
-  setChip('回位');
-  voice.say('开始', { force: true });
-  toast(EXERCISES[state.ex].label + ' · 开始');
-}
-
-function enterRest(){
-  state.phase = 'resting';
-  counter.reset();
-  smoother.reset();
-  $('restSheet').classList.add('show');
-  $('restDone').textContent = workout.setIndex - 1;
-  $('restNext').textContent = `${workout.setIndex}/${workout.targetSets}`;
-  voice.say(`第${workout.setIndex - 1}组完成，休息${CONFIG.restSeconds}秒`, { force: true });
-  setChip('休息中');
-}
-
-function leaveRest(){
-  $('restSheet').classList.remove('show');
-  state.phase = 'training';
-  counter.reset();
-  smoother.reset();
-  voice.say(`开始第${workout.setIndex}组`, { force: true });
-  setChip('回位');
-}
-
-function finishWorkout(auto){
-  if (state.phase === 'summary') return;
-  const summary = workout.finish(performance.now());
-  state.phase = 'summary';
-  state.lastSummary = summary;
-  $('restSheet').classList.remove('show');
-  $('shutter').classList.remove('on');
-  $('rec').classList.remove('on');
-  voice.stop();
-  if (summary.totalValue > 0){
-    saveSession(summary);
-    renderToday();
-  }
-  renderSummary(summary, auto);
-  $('summarySheet').classList.add('show');
-  if (summary.totalValue > 0) voice.say('训练完成', { force: true });
-}
-
-function renderSummary(s, auto){
-  const ex = EXERCISES[s.ex];
-  $('sumTitle').textContent = ex.label + (auto ? ' · 目标达成' : ' · 本次训练');
-  $('sumValue').textContent = s.unit === '秒' ? Math.round(s.totalValue) : s.totalValue;
-  $('sumUnit').textContent = s.unit;
-  $('sumMeta').textContent =
-    `${s.completedSets || s.sets.length} 组 · 用时 ${fmtClock(s.seconds)}` +
-    (s.mode === 'target' ? ` · 目标 ${s.targetSets}×${s.targetPerSet}${s.unit}` : ' · 自由练');
-  $('sumSets').innerHTML = s.sets.length
-    ? s.sets.map(g => `<div class="setRow"><span class="idx">第 ${g.index} 组${g.partial ? '（未完）' : ''}</span><span class="val">${Math.round(g.value * 10) / 10}<em>${s.unit}</em></span></div>`).join('')
-    : '<div class="hempty">这次没有完成有效动作</div>';
-}
-
-$('skipRest').onclick = () => { workout.skipRest(performance.now()); leaveRest(); };
-$('sumClose').onclick = () => {
-  $('summarySheet').classList.remove('show');
-  state.phase = 'live';
-  workout.reset();
-  counter.reset();
-  smoother.reset();
-  renderIdleHud();
-  renderer.clear();
-  renderer.hideFocus();
+$('primary').onclick=()=>{
+  if(phase==='training'||phase==='positioning')pause();
+  else if(['idle','paused','resting'].includes(phase))prepare();
 };
-$('sumAgain').onclick = () => { $('summarySheet').classList.remove('show'); startWorkout(); };
-
-/* ============================================================
-   快门与镜头
-   ============================================================ */
-$('shutter').onclick = () => {
-  voice.unlock();
-  if (state.phase === 'ready' || state.phase === 'error'){ openFinder(); return; }
-  if (state.phase === 'live'){ startWorkout(); return; }
-  if (state.phase === 'training' || state.phase === 'resting'){ finishWorkout(false); }
+$('finish').onclick=finish;
+$('flip').onclick=async()=>{
+  if(!engine || phase==='loading')return;
+  // Re-enter preparation so switching cameras cannot create a counted repetition.
+  const facing=engine.facing==='user'?'environment':'user';
+  pause('正在切换镜头…');
+  preferredFacing=facing; await prepare();
 };
-
-$('flipBtn').onclick = async () => {
-  if (!engine.stream){ toast('先开启摄像头'); return; }
-  try {
-    await engine.flip();
-    renderer.mirror = engine.mirror;
-    syncBg();
-    smoother.reset();
-    toast(engine.facing === 'user' ? '前置镜头' : '后置镜头');
-  } catch { toast('镜头切换失败', 'err'); }
+$('exercises').onclick=e=>{const b=e.target.closest('[data-ex]');if(b&&phase==='idle')choose(b.dataset.ex);};
+$('mode').onchange=()=>{$('targets').hidden=$('mode').value!=='target';};
+$('orientation').onclick=e=>{const b=e.target.closest('[data-layout]');if(!b)return;orientation=b.dataset.layout;prefs.set('orientation',orientation);layout();};
+$('voice').checked=prefs.get('voice',false);
+$('voice').onchange=()=>{voice.enabled=$('voice').checked;prefs.set('voice',voice.enabled);if(voice.enabled){voice.unlock();voice.say('语音已开启');}else voice.stop();};
+$('summaryClose').onclick=()=>$('summary').close();
+$('again').onclick=()=>{$('summary').close();prepare();};
+$('historyBtn').onclick=()=>{
+  $('historyList').replaceChildren();
+  const sessions=getSessions().slice().reverse();
+  if(!sessions.length)$('historyList').textContent='今天还没有训练记录。';
+  for(const s of sessions){const row=document.createElement('div');row.className='history-row';row.textContent=`${labels[s.ex]||s.ex} · ${Math.round(s.totalValue*10)/10} ${s.unit} · ${fmtClock(s.seconds)}`;$('historyList').append(row);}
+  $('history').showModal();
 };
-
-$('soundBtn').onclick = () => {
-  state.voiceOn = !state.voiceOn;
-  prefs.set('voice', state.voiceOn);
-  applyToggles();
-  if (state.voiceOn){ voice.unlock(); voice.say('语音已开', { force: true }); }
-  else voice.stop();
-  toast(state.voiceOn ? '语音：开' : '语音：关');
-};
-
-/* 双击取景区切换网格 */
-let lastTap = 0;
-finder.addEventListener('click', e => {
-  if (e.target.closest('button')) return;
-  const now = Date.now();
-  if (now - lastTap < 280){
-    state.grid = !state.grid;
-    prefs.set('grid', state.grid);
-    applyToggles();
-    toast(state.grid ? '网格：开' : '网格：关');
-  }
-  lastTap = now;
-});
-
-/* ============================================================
-   设置抽屉
-   ============================================================ */
-function openSettings(){
-  renderSettings();
-  renderToday();
-  $('settingsSheet').classList.add('show');
-}
-$('settingsBtn').onclick = openSettings;
-$('gateSettings').onclick = openSettings;
-$('settingsClose').onclick = () => $('settingsSheet').classList.remove('show');
-$('settingsSheet').addEventListener('click', e => {
-  if (e.target === $('settingsSheet')) $('settingsSheet').classList.remove('show');
-});
-
-function renderSettings(){
-  $('modeSeg').querySelectorAll('button').forEach(b =>
-    b.classList.toggle('on', b.dataset.mode === state.mode));
-  $('targetFields').style.display = state.mode === 'target' ? '' : 'none';
-  $('setsVal').textContent = state.sets;
-  $('perSetVal').textContent = state.perSet;
-  $('perSetLabel').textContent = EXERCISES[state.ex].hold ? '每组秒数' : '每组次数';
-}
-
-$('modeSeg').addEventListener('click', e => {
-  const b = e.target.closest('button[data-mode]');
-  if (!b) return;
-  state.mode = b.dataset.mode;
-  prefs.set('mode', state.mode);
-  renderSettings();
-  if (state.phase === 'live') renderIdleHud();
-});
-
-document.querySelectorAll('[data-step]').forEach(b => {
-  b.onclick = () => {
-    const [field, delta] = b.dataset.step.split(':');
-    const d = Number(delta);
-    if (field === 'sets') state.sets = Math.min(10, Math.max(1, state.sets + d));
-    else {
-      const step = EXERCISES[state.ex].hold ? 5 : 1;
-      state.perSet = Math.min(EXERCISES[state.ex].hold ? 300 : 200,
-                              Math.max(step, state.perSet + d * step));
-    }
-    prefs.set('sets', state.sets);
-    prefs.set('perSet', state.perSet);
-    renderSettings();
-    if (state.phase === 'live') renderIdleHud();
-  };
-});
-
-document.querySelectorAll('.sw').forEach(b => {
-  b.onclick = () => {
-    const k = b.dataset.toggle;
-    if (k === 'voice'){
-      state.voiceOn = !state.voiceOn;
-      prefs.set('voice', state.voiceOn);
-      // 打开语音时借这次点击手势解锁 iOS 播报
-      if (state.voiceOn){ voice.unlock(); voice.say('语音已开', { force: true }); }
-      else voice.stop();
-    }
-    if (k === 'skeleton'){ state.skeleton = !state.skeleton; prefs.set('skeleton', state.skeleton); }
-    if (k === 'grid'){ state.grid = !state.grid; prefs.set('grid', state.grid); }
-    applyToggles();
-  };
-});
-
-$('fitSeg').addEventListener('click', e => {
-  const b = e.target.closest('button[data-fit]');
-  if (!b || b.dataset.fit === state.fit) return;
-  state.fit = b.dataset.fit;
-  prefs.set('fit', state.fit);
-  applyFit();
-  toast(state.fit === 'contain' ? '完整视野（未裁切）' : '铺满画面（左右会裁切）');
-});
-
-function renderToday(){
-  const stats = getTodayStats();
-  $('todayBox').innerHTML = `
-    <div class="tcard"><b>${stats.reps}</b><span>总次数</span></div>
-    <div class="tcard"><b>${stats.sessions}</b><span>训练次数</span></div>
-    <div class="tcard"><b>${Math.round(stats.seconds / 60)}</b><span>分钟</span></div>`;
-  const list = getSessions().slice().reverse();
-  $('historyList').innerHTML = list.length
-    ? list.map(s => {
-        const d = new Date(s.at);
-        const t = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-        return `<div class="hrow"><span>${EXERCISES[s.ex]?.label || s.ex}<span class="t"> · ${t}</span></span><span class="v">${Math.round(s.totalValue)}${s.unit}</span></div>`;
-      }).join('')
-    : '<div class="hempty">今天还没有训练记录<br>完成一次训练后会显示在这里</div>';
-}
-
-$('clearToday').onclick = () => {
-  clearToday();
-  renderToday();
-  toast('今日记录已清空');
-};
-
-/* ============================================================
-   计数事件处理
-   ============================================================ */
-function onProgress(value, now){
-  const r = workout.addValue(value, now);
-  if (r === 'rest') enterRest();
-  else if (r === 'done') finishWorkout(true);
-}
-
-function handleCounter(out, now){
-  for (const ev of out.events){
-    if (ev.type === 'guide') guide(ev.msg);
-    else if (ev.type === 'warn') warn(ev.msg);
-    else if (ev.type === 'rep'){
-      onProgress(1, now);
-      if (workout.totalValue > 0 && workout.totalValue % 5 === 0) voice.say(String(workout.totalValue));
-    } else if (ev.type === 'holdDone'){
-      onProgress(ev.seconds, now);
-      voice.say(Math.round(ev.seconds) + '秒', { gap: 1200 });
-    }
-  }
-
-  if (!out.blocked){
-    if (out.holding) setChip('保持 ' + out.holdSeconds.toFixed(1) + 's', 'good');
-    else if (out.phase === 'bottom') setChip('发力中', 'good');
-    else setChip('回位');
-  }
-
-  $('chipAngle').innerHTML = '角度 <b>' + (isNaN(out.angle) ? '—' : Math.round(out.angle) + '°') + '</b>';
-
-  // HUD 数值
-  const isHold = EXERCISES[state.ex].hold;
-  const val = isHold ? workout.totalValue + out.holdSeconds : workout.totalValue;
-  $('hudValue').textContent = isHold ? val.toFixed(1) : val;
-  $('hudUnit').textContent = EXERCISES[state.ex].unit;
-  $('setLine').textContent = workout.isTarget
-    ? `第 ${workout.setIndex}/${workout.targetSets} 组 · 本组 ${Math.round(workout.setValue * 10) / 10}/${workout.targetPerSet}`
-    : '自由练';
-}
-
-/* ============================================================
-   主循环
-   ============================================================ */
-let tickCount = 0;
-function loop(){
-  requestAnimationFrame(loop);
-  const now = performance.now();
-
-  // 训练时钟 + 休息结束
-  if (state.phase === 'training' || state.phase === 'resting'){
-    const r = workout.tick(now);
-    if (r === 'restEnd') leaveRest();
-    if (state.phase === 'resting'){
-      $('restNum').textContent = Math.ceil(workout.restLeft(now));
-    }
-    if (++tickCount % 15 === 0){
-      $('recTime').textContent = fmtClock(workout.trainingMs / 1000);
-    }
-  }
-
-  if (!engine.ready || video.readyState < 2) return;
-  if (video.currentTime === lastVideoTime) return;
-  lastVideoTime = video.currentTime;
-
-  const res = engine.detect(now);
-  if (!res) return;
-
-  // 帧率统计
-  frameTimes.push(now);
-  while (frameTimes.length && now - frameTimes[0] > 1200) frameTimes.shift();
-  if (frameTimes.length > 4){
-    const fps = frameTimes.length / 1.2;
-    $('fps').textContent = Math.round(fps) + ' fps';
-    // 持续低帧率则降画质
-    if (fps < CONFIG.minFps && engine.quality === 'high' && engine.stream){
-      if (!lowFpsSince) lowFpsSince = now;
-      else if (now - lowFpsSince > CONFIG.lowFpsMs){
-        lowFpsSince = 0;
-        engine.openCamera(engine.facing, 'low').then(() => {
-          renderer.mirror = engine.mirror;
-          syncBg();
-          toast('已降低画质以保持流畅');
-        }).catch(() => {});
-      }
-    } else lowFpsSince = 0;
-  }
-
-  const lmN = res.landmarks?.[0];
-  const lmW = res.worldLandmarks?.[0];
-
-  if (lmN){
-    noPoseSince = 0;
-    $('empty').classList.remove('show');
-    const pts = smoother.apply(lmN);
-    if (!window.__freezeDraw){
-      renderer.draw(pts, state.ex, counter.cur, counter.phase, { skeleton: state.skeleton });
-      renderer.focus(pts, counter.phase === 'bottom');
-    }
-    if (state.phase === 'training'){
-      const out = counter.update(lmN, lmW, now);
-      handleCounter(out, now);
-    }
-  } else {
-    if (!window.__freezeDraw){ renderer.clear(); renderer.hideFocus(); }
-    if (!noPoseSince) noPoseSince = now;
-    else if (now - noPoseSince > CONFIG.noPoseMs && engine.stream){
-      if (state.phase === 'training' || state.phase === 'live'){
-        $('empty').classList.add('show');
-        if (state.phase === 'training') setChip('未检测到人', 'bad');
-      }
-    }
-  }
-}
-
-/* ============================================================
-   生命周期
-   ============================================================ */
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden){
-    voice.stop();
-    // 切后台自动结束并保存，避免计时虚高
-    if (state.phase === 'training' || state.phase === 'resting') finishWorkout(false);
-  }
-});
-
-let wakeLock = null;
-async function keepAwake(){
-  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
-}
-document.addEventListener('click', () => { if (!wakeLock) keepAwake(); }, { once: true });
-document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
-document.addEventListener('gesturestart', e => e.preventDefault());
-
-// 仅移动端设计：桌面访问给提示但不阻断（便于调试）
-if (!/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) && window.innerWidth > 900){
-  const hint = document.createElement('div');
-  hint.className = 'desktopHint show';
-  hint.textContent = '本产品为手机设计，建议用手机浏览器打开';
-  finder.appendChild(hint);
-}
-
-renderIdleHud();
-applyToggles();
-applyFit();
-boot();
-
-/* 调试出口：仅 ?debug=1 */
-if (location.search.includes('debug')){
-  window.__pose = {
-    state, engine, counter, workout, smoother, renderer, voice,
-    evalPose: (n, w) => counter.update(n, w, performance.now()),
-    handle: (out) => handleCounter(out, performance.now()),
-    setEx: k => selectExercise(k),
-    start: () => startWorkout(),
-    finish: () => finishWorkout(false),
-    skipRest: () => { workout.skipRest(performance.now()); leaveRest(); },
-    setNorm: (arr) => {
-      smoother.reset();
-      for (let i = 0; i < arr.length; i++){
-        const p = arr[i] || { x:.5, y:.5, z:0, visibility:1 };
-        smoother.pts[i] = { x: p.x, y: p.y, z: p.z || 0, v: p.visibility ?? 1 };
-      }
-    },
-    angle
-  };
-}
+$('historyClose').onclick=()=>$('history').close();
+let wakeLock=null;
+async function keepAwake(){try{if(!wakeLock && 'wakeLock' in navigator){const lock=await navigator.wakeLock.request('screen');if(phase!=='training'){await lock.release();return;}wakeLock=lock;lock.addEventListener('release',()=>{if(wakeLock===lock)wakeLock=null;});}}catch{}}
+function releaseWakeLock(){wakeLock?.release().catch(()=>{});wakeLock=null;}
+document.addEventListener('visibilitychange',()=>{if(document.hidden){voice.stop();if(['loading','positioning','countdown','training'].includes(phase))pause('已暂停并关闭摄像头。返回后点击继续。');}});
+window.addEventListener('pagehide',()=>{clearTimeout(restTimer);stopCamera();});
+choose(ex);layout();controls();

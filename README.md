@@ -4,7 +4,7 @@
 
 不需要装 App，不需要账号，不需要联网分析。
 
-<img src="screenshots/finder.png" width="300" alt="取景器界面" />
+<img src="screenshots/spotter-clean.png" width="390" alt="Spotter 简洁训练界面" />
 
 ## 能做什么
 
@@ -20,14 +20,31 @@
 **站位引导**：脚未入镜、距离太远/太近，直接提示调整
 **训练闭环**：自由练或定目标（组数 × 每组量）→ 组间休息 → 完成总结 → 今日记录
 
+## 体验与新版界面
+
+[在线体验（WorkBuddy）](https://pose-coach-42598.app.workbuddy.host/?sharecode=L6WEF567T2)
+
+此链接为现有托管版本；GitHub 中的新版需要在 WorkBuddy 重新部署后才会出现在该链接中。
+
+新版采用简洁的训练页面，默认竖屏，可在「训练选项」中切换横屏布局。手机浏览器不一定支持程序锁定屏幕方向，选择横屏后请同时转动手机。偏好会保存在本机。
+
 ## 在手机上用
 
-1. 用 **Safari 或 Chrome** 打开页面（微信内置浏览器拿不到摄像头权限）
-2. 点快门 → 允许摄像头
-3. 手机架起来，**退后 2 米，全身和脚入镜**
-4. 选动作 → 开始练
+1. 用 Safari 或 Chrome 打开页面，选择动作；需要时设置训练目标和语音。
+2. 点击「准备训练」，按提示允许摄像头。
+3. 按动作提示摆好手机、完整入镜；站位稳定后自动倒计时 3 秒开始。
+4. 暂停时摄像头关闭；继续训练会重新检查站位。结束后查看本机记录。
 
-首次加载约 24MB（模型 + 推理引擎），建议 WiFi，之后走缓存。
+全身动作需要脚入镜；弯举和侧平举只需上半身及相关手臂入镜。
+
+首次准备需要加载约 24MB 的模型与运行时，建议使用 Wi-Fi。首页不自动加载模型或打开摄像头。
+
+### 资源使用
+
+- 摄像头仅在准备、倒计时和训练阶段使用；暂停、结束、组间休息及切到后台时停止采集并释放模型。
+- 移除了模糊背景视频、构图网格和伪录像界面；默认请求低分辨率、15 fps 相机，推理最多 12 次/秒。
+- 20 秒未清晰入镜或站位不合格时自动关闭摄像头；继续需用户主动操作。
+- 这些措施用于减少持续负载，尚未在真实手机上测量温度、电量和识别延迟。训练过程中摄像头仍需工作。
 
 ## 本地运行
 
@@ -44,7 +61,7 @@ npm start              # 启动本地服务
 
 - **推理**：MediaPipe Tasks Vision（`pose_landmarker_lite`），WebAssembly + WebGL
 - **角度计算**：优先使用 `worldLandmarks`（米制 3D 坐标），避免 2D 投影带来的透视畸变
-- **平滑**：关节坐标与角度双自适应 EMA，动作快时跟得上、静止时不抖（实测抖动 6.28° → 1.05°）
+- **平滑**：关节坐标与角度双自适应 EMA，动作快时跟得上、静止时不抖
 - **计数**：关节角状态机 + 滞回阈值，幅度不足不计入
 - **零依赖**：没有前端框架、没有构建步骤、没有 npm 运行时依赖
 
@@ -83,3 +100,5 @@ Spotter is a mobile browser fitness companion for beginners who exercise at home
 **Evaluation (2026-10-30):** A reproducible synthetic-landmark test counted 10 of 10 squat cycles, produced 0 false counts across 400 stationary frames, and measured counter update time at 0.0062 ms p95 on a Windows desktop (Node 24, Intel i7-14700F). These are counter-only results, not camera-to-feedback latency or pose-estimation accuracy. Real-user accuracy, mobile latency and improvement in exercise form have not yet been measured. See [evaluation details](evaluation/RESULTS.md) and [product definition](PRODUCT.md).
 
 **Run locally:** `npm run fetch-assets`, then `npm start`. Open `http://localhost:8899`; camera access on a phone requires HTTPS or localhost. This tool is not medical advice or a substitute for a qualified trainer.
+
+The redesigned UI defaults to portrait and offers a landscape layout. Camera and inference are started on demand and released on pause, rest, completion, backgrounding or failed setup. A 12 Hz inference cap and a 15 fps camera request reduce continuous work; on-device thermal and battery improvements remain unmeasured.
