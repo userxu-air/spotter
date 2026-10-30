@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="姿势教练">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./styles.css">
+<title>姿势教练 · Pose Coach</title>
+</head>
+<body>
+
+<div id="finder">
+  <video id="videoBg" playsinline muted autoplay></video>
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="overlay"></canvas>
+
+  <div class="grid" id="grid"><i></i><i></i><i></i><i></i></div>
+  <div class="focus" id="focus"><i></i><i></i><i></i><i></i></div>
+
+  <!-- 顶部状态条 -->
+  <div class="topbar">
+    <div class="rec" id="rec"><b></b><span>REC</span><span id="recTime">00:00</span></div>
+    <div class="topright">
+      <span id="resTag">—</span><span class="sep"></span><span id="fps">—</span>
+    </div>
+  </div>
+
+  <!-- 设置入口 -->
+  <button class="iconbtn" id="settingsBtn" aria-label="设置">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.12.3.37.55.67.66H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+
+  <!-- 计数 HUD -->
+  <div class="hud" id="hud">
+    <div class="counter">
+      <div class="k" id="hudLabel">REPS</div>
+      <div class="v"><span id="hudValue">0</span><small id="hudUnit">次</small></div>
+    </div>
+    <div class="setline" id="setLine"></div>
+    <div class="chips">
+      <div class="chip" id="chipAngle">角度 <b>—</b></div>
+      <div class="chip" id="chipPhase">待开始</div>
+    </div>
+  </div>
+
+  <!-- 提示条 -->
+  <div class="toast" id="toast"></div>
+
+  <!-- 空状态：画面里没人 -->
+  <div class="empty" id="empty">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.4"/><path d="M12 8v7"/><path d="M8 10.5 12 9l4 1.5"/><path d="M9.5 21 12 15l2.5 6"/></svg>
+    <p id="emptyText">走到画面里，全身和脚都要入镜</p>
+  </div>
+
+  <!-- 底部相机条 -->
+  <div class="cambar">
+    <div class="modes" id="modes"></div>
+    <div class="shutterRow">
+      <button class="ghost" id="soundBtn" aria-label="语音">
+        <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+      </button>
+      <button class="shutter" id="shutter" aria-label="开始或结束"><i></i></button>
+      <button class="ghost" id="flipBtn" aria-label="翻转镜头">
+        <svg viewBox="0 0 24 24"><path d="M20 15a8 8 0 0 1-13.7 3.7L3 15"/><path d="M3 21v-6h6"/><path d="M4 9a8 8 0 0 1 13.7-3.7L21 9"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 组间休息 -->
+  <div class="veil" id="restSheet">
+    <div class="veilInner">
+      <div class="veilK">REST</div>
+      <div class="restNum" id="restNum">40</div>
+      <p class="veilP">第 <b id="restDone">1</b> 组完成 · 下一组 <b id="restNext">2/3</b></p>
+      <button class="pill primary" id="skipRest">跳过休息</button>
+    </div>
+  </div>
+
+  <!-- 训练总结 -->
+  <div class="veil" id="summarySheet">
+    <div class="veilInner wide">
+      <div class="veilK">SUMMARY</div>
+      <h3 id="sumTitle">本次训练</h3>
+      <div class="sumBig"><span id="sumValue">0</span><small id="sumUnit">次</small></div>
+      <div class="sumMeta" id="sumMeta"></div>
+      <div class="sumSets" id="sumSets"></div>
+      <div class="rowBtns">
+        <button class="pill ghost2" id="sumClose">返回取景</button>
+        <button class="pill primary" id="sumAgain">再来一组</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置抽屉 -->
+  <div class="drawer" id="settingsSheet">
+    <div class="drawerCard">
+      <div class="drawerHead">
+        <span>训练设置</span>
+        <button class="x" id="settingsClose" aria-label="关闭">✕</button>
+      </div>
+
+      <div class="field">
+        <label>模式</label>
+        <div class="seg" id="modeSeg">
+          <button data-mode="free" class="on">自由练</button>
+          <button data-mode="target">定目标</button>
+        </div>
+      </div>
+
+      <div class="field" id="targetFields">
+        <label>目标</label>
+        <div class="steppers">
+          <div class="stepper">
+            <span>组数</span>
+            <div><button data-step="sets:-1">−</button><b id="setsVal">3</b><button data-step="sets:1">+</button></div>
+          </div>
+          <div class="stepper">
+            <span id="perSetLabel">每组次数</span>
+            <div><button data-step="perSet:-1">−</button><b id="perSetVal">15</b><button data-step="perSet:1">+</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>取景方式</label>
+        <div class="seg" id="fitSeg">
+          <button data-fit="contain" class="on">完整视野</button>
+          <button data-fit="cover">铺满裁切</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>显示与反馈</label>
+        <div class="switches">
+          <button class="sw on" data-toggle="voice">语音提示<i></i></button>
+          <button class="sw on" data-toggle="skeleton">骨架叠加<i></i></button>
+          <button class="sw on" data-toggle="grid">构图网格<i></i></button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>今日记录</label>
+        <div class="today" id="todayBox"></div>
+        <div class="history" id="historyList"></div>
+        <button class="linkbtn" id="clearToday">清空今日记录</button>
+      </div>
+
+      <div class="footNote" id="engineNote"></div>
+    </div>
+  </div>
+
+  <!-- 启动 / 加载 / 异常 -->
+  <div class="gate" id="gate">
+    <div class="gateIcon" id="gateIcon">
+      <svg viewBox="0 0 24 24"><path d="M23 7 16 12l7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+    </div>
+    <h2 id="gateTitle">把手机架好，<em>退后 2 米</em></h2>
+    <p id="gateDesc">全身和脚入镜，镜头放正，光线充足。<br>点快门开启取景器，<b>画面只在本机处理</b>。</p>
+
+    <div class="progress" id="progressBox"><i id="bar"></i></div>
+    <button class="gbtn" id="startBtn" disabled aria-label="开启摄像头"></button>
+    <div class="gstat" id="loadStat">正在加载模型…</div>
+    <button class="pill ghost2 small hidden" id="retryBtn">重新加载</button>
+    <button class="linkbtn" id="gateSettings">先设置训练目标</button>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "pose-coach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "手机浏览器里的 AI 姿势教练：摄像头实时识别动作、自动计数、纠正姿态，全程本地推理",
+  "scripts": {
+    "fetch-assets": "node scripts/fetch-assets.mjs",
+    "start": "node serve.js"
+  },
+  "keywords": ["pose-estimation", "mediapipe", "fitness", "workout", "webgl", "mobile"],
+  "license": "MIT"
+}

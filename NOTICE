@@ -1,0 +1,22 @@
+# 第三方组件声明
+
+本项目使用了以下第三方组件，其著作权归各自所有者所有。
+
+## MediaPipe Tasks Vision
+
+- 来源：https://github.com/google-ai-edge/mediapipe
+- 许可：Apache License 2.0
+- 用途：浏览器端人体姿态关键点推理
+- 分发形式：
+  - `assets/vision_bundle.mjs`（`@mediapipe/tasks-vision` 打包产物）
+  - `assets/wasm/*`（WebAssembly 运行时）
+  - `assets/models/pose_landmarker_lite.task`（BlazePose GHUM 姿态模型）
+
+上述文件通过 `scripts/fetch-assets.mjs` 从 Google 官方与 npm CDN 下载，未作修改。
+
+Apache License 2.0 全文见：http://www.apache.org/licenses/LICENSE-2.0
+
+## 说明
+
+姿态模型（`pose_landmarker_lite.task`）的模型卡标注为 Apache-2.0。
+商业分发前建议自行确认 Google 官方最新条款。

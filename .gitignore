@@ -1,0 +1,19 @@
+# 依赖与构建产物
+node_modules/
+package-lock.json
+
+# MediaPipe 运行时与模型（约 24MB，用 npm run fetch-assets 拉取）
+assets/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+
+# 本地交接文档（含环境信息，不公开）
+AGENTS.md
