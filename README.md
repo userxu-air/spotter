@@ -73,3 +73,13 @@ src/
 ## 许可
 
 代码 MIT。内置的 MediaPipe 运行时与模型为 Apache-2.0，详见 [NOTICE](NOTICE)。
+
+## English overview
+
+Spotter is a mobile browser fitness companion for beginners who exercise at home and lack live feedback. It estimates body landmarks locally, counts repetitions or holds, and offers basic rule-based positioning and form cues. Camera frames are processed on-device; workout history stays in local storage.
+
+**Why this stack:** MediaPipe Pose Landmarker Lite and WebAssembly/WebGL support on-device inference without a server. Plain HTML, CSS and JavaScript keep setup simple. The counter uses estimated 3D world landmarks where available, adaptive smoothing and threshold hysteresis to reduce jitter and repeated counts.
+
+**Evaluation (2026-10-30):** A reproducible synthetic-landmark test counted 10 of 10 squat cycles, produced 0 false counts across 400 stationary frames, and measured counter update time at 0.0062 ms p95 on a Windows desktop (Node 24, Intel i7-14700F). These are counter-only results, not camera-to-feedback latency or pose-estimation accuracy. Real-user accuracy, mobile latency and improvement in exercise form have not yet been measured. See [evaluation details](evaluation/RESULTS.md) and [product definition](PRODUCT.md).
+
+**Run locally:** `npm run fetch-assets`, then `npm start`. Open `http://localhost:8899`; camera access on a phone requires HTTPS or localhost. This tool is not medical advice or a substitute for a qualified trainer.
