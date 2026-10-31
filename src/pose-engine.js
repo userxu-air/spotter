@@ -1,5 +1,8 @@
 import { CONFIG } from './config.js';
 
+// Keep downloaded model bytes for this page; GPU/model instances are still released.
+let modelBytes = null;
+
 /** 带进度下载，返回 ArrayBuffer */
 async function download(url, onProgress){
   const res = await fetch(url);
@@ -47,8 +50,9 @@ export class PoseEngine {
     const { PoseLandmarker, FilesetResolver } = await import(CONFIG.bundlePath);
     const fileset = await FilesetResolver.forVisionTasks(CONFIG.wasmPath);
 
-    onProgress?.(0.30, '正在下载姿态模型');
-    const buf = await download(CONFIG.modelPath, p => onProgress?.(0.30 + p * 0.62, '正在下载姿态模型'));
+    onProgress?.(0.30, modelBytes ? '正在读取模型缓存' : '正在下载姿态模型');
+    const buf = modelBytes || await download(CONFIG.modelPath, p => onProgress?.(0.30 + p * 0.62, '正在下载姿态模型'));
+    modelBytes = buf;
 
     onProgress?.(0.94, '正在初始化');
     // GPU 优先；部分机型 WebGL 上下文创建失败，自动回退 CPU

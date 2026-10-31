@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-31",
+  "method": "Chromium device emulation; training dialog opened for layout inspection without camera/model",
+  "measurements": [
+    {
+      "size": {
+        "width": 320,
+        "height": 568
+      },
+      "home": {
+        "width": 320,
+        "height": 568,
+        "scrollHeight": 568,
+        "scrollWidth": 320,
+        "startBottom": 537.5
+      },
+      "training": {
+        "cameraHeight": 511.1875,
+        "viewportHeight": 568,
+        "ratio": 0.8999779929577465,
+        "buttonHeight": 44
+      }
+    },
+    {
+      "size": {
+        "width": 390,
+        "height": 844
+      },
+      "home": {
+        "width": 390,
+        "height": 844,
+        "scrollHeight": 844,
+        "scrollWidth": 390,
+        "startBottom": 805.5
+      },
+      "training": {
+        "cameraHeight": 759.59375,
+        "viewportHeight": 844,
+        "ratio": 0.8999925947867299,
+        "buttonHeight": 44
+      }
+    },
+    {
+      "size": {
+        "width": 430,
+        "height": 932
+      },
+      "home": {
+        "width": 430,
+        "height": 932,
+        "scrollHeight": 932,
+        "scrollWidth": 430,
+        "startBottom": 893.5
+      },
+      "training": {
+        "cameraHeight": 838.796875,
+        "viewportHeight": 932,
+        "ratio": 0.8999966469957081,
+        "buttonHeight": 44
+      }
+    },
+    {
+      "size": {
+        "width": 844,
+        "height": 390
+      },
+      "home": {
+        "width": 844,
+        "height": 390,
+        "scrollHeight": 390,
+        "scrollWidth": 844,
+        "startBottom": 359.5
+      },
+      "training": {
+        "cameraHeight": 351,
+        "viewportHeight": 390,
+        "ratio": 0.9,
+        "buttonHeight": 44
+      }
+    }
+  ]
+}

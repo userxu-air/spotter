@@ -1,21 +1,31 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f5f6f2"><link rel="icon" href="./icon.svg"><link rel="manifest" href="./manifest.json"><link rel="stylesheet" href="./styles.css"><title>Spotter · 好好练一组</title></head>
-<body><main class="app">
-<header><a class="brand" href="./">spotter<span>你的日常运动搭子</span></a><button id="historyBtn" class="text-btn">今日记录</button></header>
-<section class="intro"><p class="eyebrow">MOVE A LITTLE. FEEL BETTER.</p><h1>给自己，一组的时间。</h1><p>选一个动作，放好手机。计数和节奏，交给 Spotter。</p></section>
-<div class="workspace">
-<section class="setup panel"><div class="section-head"><h2>今天练什么</h2><span>01 / 准备</span></div><div id="exercises" class="exercises"></div><p id="exerciseHint" class="hint"></p>
-<details><summary>训练选项 · 方向与目标</summary><div class="field"><label for="mode">训练方式</label><select id="mode"><option value="free">自由练习</option><option value="target">设定目标</option></select></div>
-<div id="targets" class="target-fields" hidden><label>组数<input id="sets" type="number" min="1" max="10" value="3"></label><label>每组次数 / 秒<input id="perSet" type="number" min="1" max="300" value="15"></label></div>
-<div class="field"><span>画面方向</span><div class="seg" id="orientation"><button data-layout="portrait" aria-pressed="true">竖屏</button><button data-layout="landscape" aria-pressed="false">横屏</button></div></div>
-<p class="micro">横屏模式会调整布局；如需横向拍摄，请同时转动手机。</p>
-<div class="field"><label for="voice">语音提示</label><input id="voice" type="checkbox"></div><div class="field"><label for="skeleton">显示动作骨架</label><input id="skeleton" type="checkbox" checked></div>
-</details><p class="privacy">画面只在本机分析，不录制、不上传。<br>仅在准备和训练时使用摄像头。</p></section>
-<section class="session panel"><div class="section-head"><h2 id="sessionTitle">先准备，再开始</h2><span id="cameraStatus">摄像头已关闭</span></div>
-<div id="finder" class="preview"><video id="video" playsinline muted></video><canvas id="overlay"></canvas><div id="focus" hidden></div><div id="placeholder"><svg viewBox="0 0 100 130" aria-hidden="true"><circle cx="50" cy="20" r="12"/><path d="M50 38v42M22 58l28-15 28 15M30 119l20-39 20 39"/></svg><strong>留一点空间，给身体</strong><span>手机架稳，按动作提示调整机位</span></div><div id="countdown" hidden></div></div>
-<div id="feedback" role="status" aria-live="polite">准备好后开启摄像头，先检查站位。</div><div class="metrics"><div><strong id="count">0</strong><span id="unit">次</span></div><div><strong id="clock">00:00</strong><span>有效训练时间</span></div><div><strong id="progress">自由练</strong><span id="phaseLabel">尚未开始</span></div></div>
-<div class="actions"><button id="primary" class="primary">准备训练</button><button id="finish" class="secondary" hidden>结束训练</button><button id="flip" class="text-btn" hidden>切换前后镜头</button></div><p class="micro">准备、暂停和休息不计入训练时间。运动中如有不适，请停止。</p></section></div>
-<footer>少一点负担，多一点坚持。<span>Spotter · 本地 AI 动作计数</span></footer>
-<dialog id="summary"><div class="section-head"><h2>这一组，完成了。</h2><button class="text-btn" id="summaryClose">关闭</button></div><p id="summaryText"></p><p class="micro">记录仅保存在此设备；未完成有效动作时不保存。</p><button id="again" class="primary">再练一次</button></dialog>
-<dialog id="history"><div class="section-head"><h2>今日记录</h2><button class="text-btn" id="historyClose">关闭</button></div><div id="historyList"></div></dialog>
-</main><script type="module" src="./src/main.js"></script></body></html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f2f2f7"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="icon" href="./icon.svg"><link rel="manifest" href="./manifest.json"><link rel="stylesheet" href="./styles.css"><title>Spotter · 每天练一点</title></head>
+<body>
+<main class="home">
+  <header class="home-header"><a class="brand" href="./" aria-label="Spotter 首页">Spotter<span class="brand-dot"></span></a><nav aria-label="快捷操作"><button id="historyBtn" class="icon-button" aria-label="今日记录"><svg viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 3 8M3 5v6h6M12 7v5l3 2"/></svg></button><button id="settingsBtn" class="icon-button" aria-label="训练设置"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button><button id="helpBtn" class="icon-button" aria-label="使用说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button></nav></header>
+  <section class="intro"><h1>今天，练一点。</h1><p>选好动作，开始属于你的这一组。</p></section>
+  <section class="selection" aria-label="选择训练动作"><h2>选择动作</h2><div id="exercises" class="exercises"></div></section>
+  <button id="goalBtn" class="home-options"><span>训练目标</span><span><b id="goalLabel">自由练习</b><span class="chevron">›</span></span></button>
+  <div class="home-footer"><button id="homeStart" class="primary">开始训练 <span aria-hidden="true">↗</span></button><p>本机分析 · 不录制 · 不上传</p></div>
+</main>
+
+<dialog id="training" class="training" aria-label="动作训练">
+  <div id="finder" class="preview"><video id="video" playsinline muted></video><canvas id="overlay"></canvas><div id="focus" hidden></div><div id="placeholder"><svg viewBox="0 0 100 130" aria-hidden="true"><circle cx="50" cy="20" r="12"/><path d="M50 38v42M22 58l28-15 28 15M30 119l20-39 20 39"/></svg><strong id="placeholderTitle">准备中</strong><span id="placeholderText">摄像头仅在准备与训练时开启</span></div><div id="countdown" hidden></div></div>
+  <header class="training-header"><button id="finish" class="overlay-button" aria-label="结束并返回">✕</button><div><h2 id="sessionTitle">准备训练</h2><span id="cameraStatus">摄像头已关闭</span></div><button id="trainingSettings" class="overlay-button" aria-label="暂停并打开设置">•••</button></header>
+  <div class="metrics"><div class="rep-metric"><strong id="count">0</strong><span id="unit">次</span></div><div class="time-metric"><strong id="clock">00:00</strong><span>有效训练</span></div><div class="progress-metric"><strong id="progress">自由练</strong><span id="phaseLabel">准备中</span></div></div>
+  <div id="feedback" role="status" aria-live="polite">调整站位后自动开始。</div>
+  <div class="training-actions"><button id="flip" class="overlay-button" aria-label="切换前后镜头"><svg viewBox="0 0 24 24"><path d="M20 9a8 8 0 0 0-14-3L3 9m0-6v6h6M4 15a8 8 0 0 0 14 3l3-3m0 6v-6h-6"/></svg></button><button id="primary" class="primary">准备训练</button><span class="action-spacer" aria-hidden="true"></span></div>
+</dialog>
+
+<dialog id="settings" class="sheet" aria-labelledby="settingsTitle"><div class="sheet-header"><h2 id="settingsTitle">训练设置</h2><button id="settingsClose" class="text-button">完成</button></div><div class="sheet-body">
+  <div class="field"><label for="mode">训练方式</label><select id="mode"><option value="free">自由练习</option><option value="target">设定目标</option></select></div>
+  <div id="targets" class="target-fields" hidden><label>组数<input id="sets" type="number" inputmode="numeric" min="1" max="10" value="3"></label><label><span id="perSetLabel">每组次数</span><input id="perSet" type="number" inputmode="numeric" min="1" max="300" value="15"></label></div>
+  <div class="field"><span>画面方向</span><div class="seg" id="orientation"><button data-layout="portrait" aria-pressed="true">竖屏</button><button data-layout="landscape" aria-pressed="false">横屏</button></div></div><p class="note">选择横屏后，请同时转动手机。</p>
+  <div class="field"><label for="voice">语音提示</label><input id="voice" class="switch" type="checkbox" role="switch"></div><div class="field"><label for="skeleton">动作骨架</label><input id="skeleton" class="switch" type="checkbox" role="switch" checked></div><p class="note">暂停后仍可调整方向和反馈，训练目标需在新一轮开始前设置。</p>
+</div></dialog>
+<dialog id="help" class="sheet" aria-labelledby="helpTitle"><div class="sheet-header"><h2 id="helpTitle">开始前，了解一下</h2><button id="helpClose" class="text-button">知道了</button></div><div class="sheet-body"><ol class="instructions"><li><b>放好手机</b><p id="exerciseHint"></p></li><li><b>站稳后自动开始</b><p>清晰入镜并保持稳定后，倒计时 3 秒开始计数。</p></li><li><b>暂停，安心休息</b><p>暂停、组间休息、结束或切到后台时，摄像头会关闭；继续时重新检查站位。</p></li></ol><p class="note">画面区域占可用网页屏幕的 90%，保留完整镜头视野。动作计数仅供练习参考；如有不适，请停止运动。</p></div></dialog>
+<dialog id="notice" class="sheet" aria-labelledby="noticeTitle"><div class="sheet-header"><h2 id="noticeTitle">需要留意</h2><button id="noticeClose" class="text-button">知道了</button></div><p id="noticeText" class="sheet-body"></p></dialog>
+<dialog id="summary" class="sheet" aria-labelledby="summaryTitle"><div class="sheet-header"><h2 id="summaryTitle">这一组，完成了。</h2><button class="text-button" id="summaryClose">完成</button></div><div class="sheet-body"><p id="summaryText"></p><p class="note">记录只保存在此设备；未完成有效动作时不保存。</p><button id="again" class="primary">再练一次</button></div></dialog>
+<dialog id="history" class="sheet" aria-labelledby="historyTitle"><div class="sheet-header"><h2 id="historyTitle">今日记录</h2><button class="text-button" id="historyClose">完成</button></div><div id="historyList" class="sheet-body"></div></dialog>
+<script type="module" src="./src/main.js"></script></body></html>

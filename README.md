@@ -1,12 +1,12 @@
 # 姿势教练 · Pose Coach
 
-[更新日志](CHANGELOG.md) · [产品定义](PRODUCT.md) · [效果评估](evaluation/RESULTS.md)
+[更新日志](CHANGELOG.md) · [产品定义](PRODUCT.md) · [效果评估](evaluation/RESULTS.md) · [手机体验设计](docs/MOBILE_UX.md)
 
 手机浏览器打开就能用的 AI 健身动作识别器。摄像头实时捕捉 33 个人体关键点，自动计数、纠正动作，**全部在本机计算，画面不上传**。
 
 不需要装 App，不需要账号，不需要联网分析。
 
-<img src="screenshots/spotter-clean.png" width="390" alt="Spotter 简洁训练界面" />
+<img src="screenshots/spotter-home.png" width="390" alt="Spotter 单屏动作选择首页" />
 
 ## 能做什么
 
@@ -28,12 +28,12 @@
 
 此链接为现有托管版本；GitHub 中的新版需要在 WorkBuddy 重新部署后才会出现在该链接中。
 
-新版采用简洁的训练页面，默认竖屏，可在「训练选项」中切换横屏布局。手机浏览器不一定支持程序锁定屏幕方向，选择横屏后请同时转动手机。偏好会保存在本机。
+新版采用参考 iOS 的单屏动作选择页，默认竖屏；目标、方向与语音通过「训练设置」底部面板配置。确认动作后进入独立训练层，相机区域占可用网页视口的 90%，保留完整视频视野。可在设置中切换横屏布局。手机浏览器不一定支持程序锁定屏幕方向，选择横屏后请同时转动手机。偏好会保存在本机。
 
 ## 在手机上用
 
 1. 用 Safari 或 Chrome 打开页面，选择动作；需要时设置训练目标和语音。
-2. 点击「准备训练」，按提示允许摄像头。
+2. 点击「开始训练」，按提示允许摄像头。
 3. 按动作提示摆好手机、完整入镜；站位稳定后自动倒计时 3 秒开始。
 4. 暂停时摄像头关闭；继续训练会重新检查站位。结束后查看本机记录。
 
@@ -104,3 +104,5 @@ Spotter is a mobile browser fitness companion for beginners who exercise at home
 **Run locally:** `npm run fetch-assets`, then `npm start`. Open `http://localhost:8899`; camera access on a phone requires HTTPS or localhost. This tool is not medical advice or a substitute for a qualified trainer.
 
 The redesigned UI defaults to portrait and offers a landscape layout. Camera and inference are started on demand and released on pause, rest, completion, backgrounding or failed setup. A 12 Hz inference cap and a 15 fps camera request reduce continuous work; on-device thermal and battery improvements remain unmeasured.
+
+The home screen fits a mobile viewport. Settings and help use bottom sheets; training opens in a separate full-screen dialog with a camera region covering 90% of the available web viewport. See [mobile UX notes](docs/MOBILE_UX.md) for measurements and remaining real-device checks.
